@@ -12,13 +12,12 @@
 *********************************************************************/
 
 /*************************** HEADER FILES ***************************/
-#include <stdlib.h>
-#include <memory.h>
 #include "sha256.h"
+
 
 /****************************** MACROS ******************************/
 
-#define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b))))
+#define ROTRIGHT(a,b) (((a) >> (b)) | ((a) << (32-(b)))) //shifts a b bits to the right and wraps 32 - b bits around to the upper indices 
 
 #define CH(x,y,z) (((x) & (y)) | (~(x) & (z)))
 #define MAJ(x,y,z) (((x) & (y)) ^ ((y) & (z)) ^ ((z) & (x)))
@@ -47,7 +46,7 @@ static const uint32_t k[NUM_ROUNDS] = {
   0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
-static const uint32_t init_digest[SHA256_DIGEST_SIZE] = {
+static const uint32_t init_digest[SHA256_DIGEST_SIZE] = { //H^(0)
 	0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 
   0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
 };
@@ -57,6 +56,10 @@ static const uint32_t init_digest[SHA256_DIGEST_SIZE] = {
 void sha256_transform(sha256_state *state)
 {
 
+        printf("In sha256_transform initially: \n");
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
   // Improve the efficiency of this code.
   //  1. Reduce memory usage by re-cycling w values
   //  2. Find a way to reduce copying (lines 83-90)
@@ -67,8 +70,8 @@ void sha256_transform(sha256_state *state)
   uint8_t  i;
 
 	for (i = 0; i < 16; ++i)
-		w[i] = state->buffer[i];
-	for ( ; i < 64; ++i)
+		w[i] = state->buffer[i]; //get 16 blocks of state buffer
+	for ( ; i < 64; ++i) //prepare the msg schedule for for w[16] to w[63]
 		w[i] = SIG1(w[i - 2]) + w[i - 7] + SIG0(w[i - 15]) + w[i - 16];
 
 	a = state->digest[0];
@@ -80,9 +83,21 @@ void sha256_transform(sha256_state *state)
 	g = state->digest[6];
 	h = state->digest[7];
 
-	for (i = 0; i < 64; ++i) {
-		t1 = h + EP1(e) + CH(e,f,g) + k[i] + w[i];
-		t2 = EP0(a) + MAJ(a,b,c);
+	for (i = 0; i < 64; ++i) { //need to adjust this part of code with change of base and rotation h=g to b = a is just a rotate right followed by the extra operations with t1 and t2.  //for k = 7; k > 0; --k state->digest[i] = state->digest[i-1] then 
+        /* 
+         * t1 = h + EP1(e) + CH(e,f,g) + k[i] + w[i]; //temp var
+		   t2 = EP0(a) + MAJ(a,b,c); //temp var
+         * for (int k = 7; k > 0; --k) {
+                state->digest[i] = state->digest[i-1];
+           }
+           e += t1;
+           a = t1 + t2;\\\
+           
+         * 
+         * 
+         */
+		t1 = h + EP1(e) + CH(e,f,g) + k[i] + w[i]; //temp var
+		t2 = EP0(a) + MAJ(a,b,c); //temp var
 		h = g;
 		g = f;
 		f = e;
@@ -92,6 +107,11 @@ void sha256_transform(sha256_state *state)
 		b = a;
 		a = t1 + t2;
 	}
+	//print to check here
+	 printf("In sha256_transform before: \n");
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
 
 	state->digest[0] += a;
 	state->digest[1] += b;
@@ -101,6 +121,11 @@ void sha256_transform(sha256_state *state)
 	state->digest[5] += f;
 	state->digest[6] += g;
 	state->digest[7] += h;
+    
+    printf("In sha256_transform: \n");
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
 }
 
 void sha256_init(sha256_state *state)
@@ -110,17 +135,23 @@ void sha256_init(sha256_state *state)
 	state->buffer_bytes_used = 0;
 	state->bit_len = 0;
 
-  for (i=0; i<SHA256_DIGEST_SIZE; i++)
+  for (i=0; i<SHA256_DIGEST_SIZE; i++) //load H^(0) into state->digest
   	state->digest[i] = init_digest[i];
+  printf("In sha256_init: \n");
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
+  
 }
 
 void sha256_update(sha256_state *state, const uint8_t data[], int len)
 {
 	int i;
+  
 
 	for (i = 0; i < len; ++i) {
 		// Add data[i] to the buffer
-    
+        state->buffer[state->buffer_bytes_used] = data[i]; //let's hope this works
 		state->buffer_bytes_used++;
 		if (state->buffer_bytes_used == BUFFER_FULL) {
 			sha256_transform(state);
@@ -128,12 +159,51 @@ void sha256_update(sha256_state *state, const uint8_t data[], int len)
 			state->buffer_bytes_used = 0;
 		}
 	}
+	
+	      printf("In sha256_update: \n");
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
 }
 
 void sha256_final(sha256_state *state, uint8_t hash[])
 {	
 	// Pad the buffer.
-  // Transform
+    // message append(1) append (k zero bits) where l +1 + k = 448 mod 512, then append 64-bit binary representation of message length
+    int i;
+    i = state->buffer_bytes_used;
+    if (state->buffer_bytes_used < 56) { // need to pad up to the last 64 bits of buffer
+        state->buffer[i++] = 0x80 ;// 10000000 -> append 1
+        while ( i < 56) 
+            state->buffer[i++] = 0x00; // 00000000
+    }
+    else {
+        state->buffer[i++] = 0x80; // append 1 
+        while (i < 64) 
+            state->buffer[i++] = 0x00; // fill with 0 until buffer is full 
+        sha256_transform(state);
+        memset(state->buffer, 0, 56); //reset buffer with 0s
+    }
+    
+    //need to append last 64 bits with message's length in bits 
+    printf ("buffer bytes used: %x \n", state->buffer_bytes_used);
+    state->bit_len += state->buffer_bytes_used * 8; //bits used 
+    printf ("bit len: %lx\n", state->bit_len);
+    state->buffer[63] = state->bit_len;
+    state->buffer[62] = state->bit_len >> 8;
+    state->buffer[61] = state->bit_len >> 16;
+    state->buffer[60] = state->bit_len >> 24;
+    state->buffer[59] = state->bit_len >> 32;
+    state->buffer[58] = state->bit_len >> 40;
+    state->buffer[57] = state->bit_len >> 48;
+    state->buffer[56] = state->bit_len >> 56;
+    sha256_transform(state);
+    
+    for (int j = 0; j < 8; ++j) {
+        printf("%d: %x\n", j, state->digest[j]);
+    }
+    
+// Transform
   // If latest buffer could not fit state->bit_len, build final buffer and transform
 	// Copy state->digest to hash
 }
